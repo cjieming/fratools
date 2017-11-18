@@ -19,7 +19,6 @@ fsplit [options] <filename>
     -v  verbose
     -d  debug
     -n  number of rows in each split file (inclusive of header) >1 
-    -o  out file name to append split to.
     
     usage: fsplit -n 500 pscalare.txt
     
@@ -32,12 +31,11 @@ fsplit [options] <filename>
 #option variables
 my $help;
 my $n = 0;
-my $outFile;
 
 #initialize options
 Getopt::Long::Configure ('bundling');
 
-if(!GetOptions ('n=i'=>\$n, 'o=s'=>\$outFile) 
+if(!GetOptions ('n=i'=>\$n) 
     || $n<2 || scalar(@ARGV)==0)
 {
     if ($help)
@@ -52,54 +50,64 @@ if(!GetOptions ('n=i'=>\$n, 'o=s'=>\$outFile)
 
 my $file = $ARGV[0];
 
-if (!defined($outFile))
-{
-    my ($name, $dir, $ext) = fileparse($file, '\..*');
-	$outFile = "$name$ext";
-}
-
+## input file
 open(IN, $file) || die "Cannot open $file\n";
 
 my $header = "";
-my $header_line_count = 0;
+my $headerProcessed = 0;
+my $numlines = 0;
+my @array;
 
 while (<IN>)
 {	
 	
-	if (/^#/)
+	if (!$headerProcessed)
 	{
-	    $header .= $_;
-    	++$header_line_count;
+			chomp;
+	    $header = $_;
+    	$headerProcessed = 1;
 	}
 	else
 	{
-    	if (($.-$header_line_count)%$n==1)
-    	{
-        	my $tempOutFile = "$outFile" . "_" . ceil(($.-1)/$n) . ".sites.vcf";
-    		#open new file		
-    		open(OUT, ">$tempOutFile") || die "Cannot open $tempOutFile\n";
-    		print OUT $header;
-    	}
-    	
-    	print OUT $_;
-    }
+			chomp;
+			push @array, $_;
+			$numlines++;
+ 	}
 }
 
 #checks if file is splitted properly
-my $splitFileNo = ceil(($.-$header_line_count)/$n);
+my $splitFileNo = ceil($numlines/$n);
 
-close(OUT);
 close(IN);
 
 #checks if file is splitted properly
 my $totalSize = 0;
 for my $i (1..$splitFileNo)
 {
-	$totalSize += -s "$outFile" . "_$i" . ".sites.vcf";
+	# open new file and write
+  my ($name, $dir, $ext) = fileparse($file, '\..*');
+	my $outFile = "$name" . "_split-" . $i . "$ext";
+
+	open(OUT, ">$outFile") || die "Cannot open $outFile";
+	
+	print OUT "$header" . "\n"; 
+	
+	for (my $i=0;$i<$n;$i++)
+	{
+		my $line = shift @array;
+		print OUT "$line" . "\n";
+	}
+	
+	if($i == ($splitFileNo - 1))
+	{
+		$n = $numlines - floor($numlines/$n)*$n;
+	}
+#	print $n."\n"; ## debug
+	close(OUT)
 }
 
-if (-s $file != $totalSize-(($splitFileNo-1)*length($header)))
-{
-	warn "Splitting of $file appears to be corrupted";
-}
+#if (-s $file != $totalSize-(($splitFileNo-1)*length($header)))
+#{
+#	warn "Splitting of $file appears to be corrupted";
+#}
 
